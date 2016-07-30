@@ -69,7 +69,7 @@
                             <field name="expired"/>
                         </group>
                     </group>
-                    <group string="Settings">
+                    <group string="Settings" name="settings">
                         <field name="block_on_expiration" class="oe_inline"/>
                         <field name="block_on_storage_exceed" class="oe_inline"/>
                     </group>
@@ -158,8 +158,13 @@
                             <field name="client_id"/>
                             <field name="active"/>
                             <field name="request_scheme"/>
-			    <field name="verify_ssl" attrs="{'invisible': [('request_scheme', '!=', 'https')]}"/>
                             <field name="request_port"/>
+                        </group>
+                        <group string="Server-side requests">
+                          <field name="local_request_scheme"/>
+                          <field name="verify_ssl" attrs="{'invisible': [('local_request_scheme', '!=', 'https')]}"/>
+                          <field name="local_host"/>
+                          <field name="local_port"/>
                         </group>
                     </group>
                     <field name="client_ids" readonly="1">
@@ -325,6 +330,16 @@
                                  <field name="method" />
                              </tree>
                          </field>
+                     </page>
+                     <page string="Limit Number Of Records" attrs="{'invisible': [('action', '!=', 'upgrade')]}">
+                       <p>This sections allows to limit number of records in arbitrary model on client. Ask developers for instructions.</p>
+                       <field name="limit_line_ids" colspan="4" >
+                         <tree editable="bottom">
+                           <field name="model" />
+                           <field name="max_records" />
+                           <field name="domain" />
+                         </tree>
+                       </field>
                      </page>
                      <page string='Affected Database(s)'>
                         <field name="database_ids">

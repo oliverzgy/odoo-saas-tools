@@ -5,7 +5,15 @@
     'license': 'LGPL-3',
     'category': 'SaaS',
     'website': 'https://it-projects.info',
-    'depends': ['auth_oauth', 'auth_oauth_check_client_id', 'saas_utils', 'mail', 'web_settings_dashboard'],
+    'depends': [
+        'auth_oauth',
+        'auth_oauth_ip',
+        'auth_oauth_check_client_id',
+        'saas_utils',
+        'mail',
+        'web_settings_dashboard',
+        'access_limit_records_number',
+    ],
     'data': [
         'views/saas_client.xml',
         'views/res_config.xml',

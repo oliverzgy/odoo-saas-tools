@@ -100,7 +100,7 @@ class SaasServerClient(models.Model):
         return ['saas_client.ab_location', 'saas_client.ab_register', 'saas_client.saas_dashboard']
 
     @api.one
-    def _prepare_database(self, client_env, owner_user=None, is_template_db=False, addons=[], access_token=None, tz=None):
+    def _prepare_database(self, client_env, owner_user=None, is_template_db=False, addons=[], access_token=None, tz=None, server_requests_scheme='http'):
         client_id = self.client_id
 
         # update saas_server.client state
@@ -120,25 +120,21 @@ class SaasServerClient(models.Model):
             value = self.env['ir.config_parameter'].get_param(key, default='')
             client_env['ir.config_parameter'].set_param(key, value)
 
-        # copy auth provider from saas_server
-        saas_oauth_provider = self.env.ref('saas_server.saas_oauth_provider')
-        oauth_provider = None
-        if is_template_db and not client_env.ref('saas_server.saas_oauth_provider', raise_if_not_found=False):
+        # set web.base.url config
+        client_env['ir.config_parameter'].set_param('web.base.url', '%s://%s' % (server_requests_scheme, self.name)) 
+
+        # saas_client must be already installed
+        oauth_provider = client_env.ref('saas_client.saas_oauth_provider')
+        if is_template_db:
+            # copy auth provider from saas_server
+            saas_oauth_provider = self.env.ref('saas_server.saas_oauth_provider')
+
             oauth_provider_data = {'enabled': False, 'client_id': client_id}
             for attr in ['name', 'auth_endpoint', 'scope', 'validation_endpoint', 'data_endpoint', 'css_class', 'body', 'enabled']:
                 oauth_provider_data[attr] = getattr(saas_oauth_provider, attr)
-            oauth_provider = client_env['auth.oauth.provider'].create(oauth_provider_data)
-            client_env['ir.model.data'].create({
-                'name': 'saas_oauth_provider',
-                'module': 'saas_server',
-                'noupdate': True,
-                'model': 'auth.oauth.provider',
-                'res_id': oauth_provider.id,
-            })
-        if not oauth_provider:
-            oauth_provider = client_env.ref('saas_server.saas_oauth_provider')
-
-        if not is_template_db:
+            oauth_provider = client_env.ref('saas_client.saas_oauth_provider')
+            oauth_provider.write(oauth_provider_data)
+        else:
             oauth_provider.client_id = client_id
 
         # prepare users
@@ -171,6 +167,7 @@ class SaasServerClient(models.Model):
                 user = client_env['res.users'].browse(SUPERUSER_ID)
             user.write({
                 'login': owner_user['login'],
+                'password': owner_user['password'],
                 'name': owner_user['name'],
                 'email': owner_user['email'],
                 'oauth_provider_id': oauth_provider.id,
@@ -187,14 +184,14 @@ class SaasServerClient(models.Model):
     def update(self):
         try:
             registry = self.registry()[0]
+            with registry.cursor() as client_cr:
+                client_env = api.Environment(client_cr, SUPERUSER_ID, self._context)
+                data = self._get_data(client_env, self.client_id)[0]
+                self.write(data)
         except psycopg2.OperationalError:
             if self.state != 'draft':
                 self.state = 'deleted'
             return
-        with registry.cursor() as client_cr:
-            client_env = api.Environment(client_cr, SUPERUSER_ID, self._context)
-            data = self._get_data(client_env, self.client_id)[0]
-            self.write(data)
 
     @api.one
     def _get_data(self, client_env, check_client_id):
@@ -309,6 +306,31 @@ class SaasServerClient(models.Model):
                     if u.id != SUPERUSER_ID:
                         users.append((3, u.id, 0))
                 g.write({'users': users})
+
+        # 7. Configure outgoing mail
+        data = post.get('configure_outgoing_mail', [])
+        for mail_conf in data:
+            ir_mail_server = client_env['ir.mail_server']
+            ir_mail_server.create({'name': 'mailgun', 'smtp_host': 'smtp.mailgun.org', 'smtp_user': mail_conf['smtp_login'], 'smtp_pass': mail_conf['smtp_password']})
+
+        # 8.Limit number of records
+        model_obj = client_env['ir.model']
+        base_limit_records_number_obj = client_env['base.limit.records_number']
+        data = post.get('limit_nuber_of_records', [])
+        for limit_line in data:
+            model = model_obj.search([('model', '=', limit_line['model'])])
+            if model:
+                limit_record = base_limit_records_number_obj.search([('model_id', '=', model.id)])
+                if limit_record:
+                    limit_record.update({'domain': limit_line['domain'],
+                                         'max_records': limit_line['max_records'],})
+                else:
+                    base_limit_records_number_obj.create({'name': 'limit_' + limit_line['model'],
+                                                      'model_id': model.id,
+                                                      'domain': limit_line['domain'],
+                                                      'max_records': limit_line['max_records'],})
+            else:
+                res['limit'] = "there is no model named %s" % limit_line['model']
 
         return res
 
